@@ -85,6 +85,12 @@ parser.add_argument("--db_name", type=str, default="qppnet_db")
 parser.add_argument("--db_user", type=str, default="qppnet_user")
 parser.add_argument("--db_pass", type=str, default="qppnet_pass")
 
+parser.add_argument(
+    "--data_shuffle_hack",
+    action="store_true",
+    help="True if data shuffle hack should be done to try to avoid empty groups.",
+)
+
 
 def save_opt(opt, logf):
     """Print and save options

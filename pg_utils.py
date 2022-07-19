@@ -1,12 +1,10 @@
 import json
 import os
+import random
 
 import numpy as np
 
 from pg_snapshot import PgSnapshot
-
-num_per_q = 900
-TRAIN_TEST_SPLIT = 0.8
 
 ###############################################################################
 #       Parsing data from csv files that contain json output of queries       #
@@ -32,8 +30,10 @@ class PostgresDataSet:
         input_func
             ???
         """
+        # Inherited hardcoded constant.
+        train_test_split = 0.8
+
         self._rng = np.random.default_rng(seed=15721)
-        self.num_sample_per_q = int(num_per_q * TRAIN_TEST_SPLIT)
         self.batch_size = opt.batch_size
 
         self.db_snapshot = PgSnapshot(opt.db_name, opt.db_user, opt.db_pass)
@@ -45,7 +45,15 @@ class PostgresDataSet:
 
         fnames = [fname for fname in os.listdir(opt.data_dir) if "csv" in fname]
         fnames = sorted(fnames, key=lambda fname: int(fname.split("temp")[1][:-4]))
+        if len(fnames) == 0:
+            fnames = sorted([fname for fname in os.listdir(opt.data_dir) if fname.endswith(".txt")])
+        print(fnames)
+
+        num_per_q = min(len(self.get_all_plans(opt.data_dir + "/" + fname)) for fname in fnames)
+        self.num_per_q = num_per_q
+        print(f"Using {self.num_per_q=}")
         self.num_q = len(fnames)
+        self.num_sample_per_q = int(num_per_q * train_test_split)
 
         data = []
         all_groups, all_groups_test = [], []
@@ -63,9 +71,15 @@ class PostgresDataSet:
             # same hash into the same group. We obtain a vector denoting each query plan's group assignment,
             # and the total number of groups.
             group_assignments, num_groups = self.grouping(query_plans)
-            assert len(query_plans) == len(
-                group_assignments
-            ), "Each query plan must be assigned a group."
+
+            # TODO(WAN): For some reason, we reimplement train/test splitting. However, the rest of the code is also
+            #            not robust to empty groups.
+            if opt.data_shuffle_hack:
+                assignments = list(zip(query_plans, group_assignments))
+                random.shuffle(assignments)
+                query_plans, group_assignments = zip(*assignments)
+
+            assert len(query_plans) == len(group_assignments), "Each query plan must be assigned a group."
             assignments = zip(query_plans, group_assignments)
             # Collect the query plans above by their assigned group.
             groups = [[] for _ in range(num_groups)]
@@ -249,8 +263,8 @@ class PostgresDataSet:
                 counter += 1
                 enum.append(idx)
                 string_hash.append(string)
-        # print(f"{counter} distinct templates identified")
-        # print(f"Operators: {string_hash}")
+        print(f"{counter} distinct templates identified")
+        print(f"Operators: {string_hash}")
         assert counter > 0, "There must be at least one query plan."
         assert len(enum) == len(
             query_plans
